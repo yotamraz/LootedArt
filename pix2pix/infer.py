@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import pandas as pd
 import torchvision
 import torch
 from torch import optim
@@ -14,7 +15,7 @@ from config import Config
 
 
 class Inference:
-    def __init__(self, opt, examples=10):
+    def __init__(self, opt):
         self.config = Config()
         self.data_path = opt.data_path
         self.batch_size = opt.batch_size
@@ -22,7 +23,8 @@ class Inference:
         self.save_path = opt.save_path
         os.makedirs(self.save_path, exist_ok=True)
         self.checkpoint = opt.checkpoint
-        self.examples = examples
+        self.examples = opt.examples
+        self.save_data = opt.save_data
 
         self.generator = Generator(in_channels=self.config.input_channels, out_channels=3, features=64).to(
             device=self.config.device)
@@ -31,32 +33,40 @@ class Inference:
 
         self.val_dataset = ArtDataset(dir_path=os.path.join(self.data_path, "test"), augment=False,
                                       img_size=self.img_size)
-        self.val_loader = DataLoader(self.val_dataset, batch_size=1, shuffle=True,
+        self.val_loader = DataLoader(self.val_dataset, batch_size=1, shuffle=False,
                                      num_workers=self.config.num_workers)
 
     def inference_loop(self):
         loop = tqdm(self.val_loader, leave=True)
         self.generator.eval()
+        if self.save_data:
+            df = pd.DataFrame(columns=["image_path", "embedding"])
         for idx, (inputs, targets) in enumerate(loop):
             inputs, targets = inputs.to(self.config.device), targets.to(self.config.device)
             with torch.no_grad():
-                _, y_fake = self.generator(inputs)
+                embedding, y_fake = self.generator(inputs)
                 y_fake = y_fake * 0.5 + 0.5  # remove normalization
-                torchvision.utils.save_image(y_fake, os.path.join(self.save_path, f"y_gen_{idx}.png"))
-                torchvision.utils.save_image(inputs * 0.5 + 0.5, os.path.join(self.save_path, f"input_{idx}.png"))
-                if idx == 1:
+                if idx < self.examples:
+                    torchvision.utils.save_image(y_fake, os.path.join(self.save_path, f"y_gen_{idx}.png"))
+                    torchvision.utils.save_image(inputs * 0.5 + 0.5, os.path.join(self.save_path, f"input_{idx}.png"))
                     torchvision.utils.save_image(targets, os.path.join(self.save_path, f"label_{idx}.jpg"))
-            if idx > self.examples:
-                break
+                if self.save_data:
+                    path_to_color_image = os.path.join(self.val_dataset.path_to_color, self.val_dataset.list_files_color[idx])
+                    df.loc[len(df.index)] = [path_to_color_image, embedding.detach().cpu().numpy().tolist()]
+
+        if self.save_data:
+            df.to_csv(os.path.join(self.save_path, "embedding.csv"))
 
 
 def infer():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, default="./sample_data")
     parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--examples", type=int, default=10)
     parser.add_argument("--img_size", type=int, default=256)
     parser.add_argument("--save_path", type=str, default="./samples")
-    parser.add_argument("--checkpoint", type=str, default="./checkpoints/generator_300.pth")
+    parser.add_argument("--checkpoint", type=str, default="./checkpoints/generator_400.pth")
+    parser.add_argument("--save_data", action="store_true")
     opt = parser.parse_args()
     inferer = Inference(opt)
     inferer.inference_loop()

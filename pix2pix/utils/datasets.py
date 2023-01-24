@@ -61,4 +61,4 @@ class ArtDataset(Dataset):
             input_image = self.input_augment_simple(image=grayscale_img)
         target_image = self.target_augment_simple(image=color_img)
 
-        return input_image["image"], target_image["image"]
+        return input_image["image"], target_image["image"]# , positive, negative

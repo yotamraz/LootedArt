@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torchvision.transforms
 from torch import optim
 from torch.utils.data import DataLoader
+from torchmetrics import MeanSquaredError
 from tqdm import tqdm
 
 from config import Config
@@ -41,7 +42,7 @@ class Trainer:
         )
         self.perceptual_loss = VGGLoss()
         self.tv_loss = TVLoss(p=2)
-        self.mse = nn.MSELoss()
+        self.mse = MeanSquaredError().to(self.opt.device)
 
         self.train_dataset = ArtDataset(dir_path=os.path.join(self.opt.data_path, "train"), augment=True,
                                         img_size=self.opt.img_size)
@@ -85,10 +86,11 @@ class Trainer:
         self.discriminator.train(), self.generator.train()
         for idx, (inputs, targets) in enumerate(loop):
             inputs, targets = inputs.to(self.opt.device), targets.to(self.opt.device)
-
+            self.generator.zero_grad()
+            self.discriminator.zero_grad()
             # train discriminator
             with torch.cuda.amp.autocast():
-                _, target_fake = self.generator(inputs)
+                latent, target_fake = self.generator(inputs)
                 d_real = self.discriminator(inputs, targets)
                 d_fake = self.discriminator(inputs, target_fake.detach())
                 d_real_loss = self.bce_loss(d_real, torch.ones_like(d_real))
@@ -102,6 +104,7 @@ class Trainer:
 
             # train generator
             with torch.cuda.amp.autocast():
+                self.discriminator.zero_grad()
                 d_fake = self.discriminator(inputs, target_fake)
                 g_fake_loss = self.bce_loss(d_fake, torch.ones_like(d_fake))
                 l1_loss = self.l1_loss(target_fake, targets) * self.config.l1_lambda

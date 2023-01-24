@@ -6,7 +6,7 @@
   "img_size": 256,
   "input_channels": 3,
   "l1_lambda": 100,
-  "triplet_lambda": 20,
+  "triplet_lambda": 1,
   "lambda_gp": 10,
   "num_epochs": 500,
   "load_model": false,
