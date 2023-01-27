@@ -1,7 +1,7 @@
 {
   "device": "cuda:0",
   "lr": 0.0002,
-  "batch_size": 32,
+  "batch_size": 16,
   "num_workers": 8,
   "img_size": 256,
   "input_channels": 3,
@@ -11,7 +11,7 @@
   "num_epochs": 500,
   "load_model": false,
   "save_model": true,
-  "save_period": 100,
+  "save_period": 50,
   "generator_model_path": "./",
   "discriminator_model_path": "./"
 }

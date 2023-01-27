@@ -15,6 +15,7 @@ from dash import Dash, dcc, html, Input, Output, no_update
 import plotly.graph_objects as go
 from PIL import Image
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
@@ -179,8 +180,8 @@ app = Dash(__name__)
 def update_by_color(value):
 
     fig = go.Figure(data=[go.Scatter(
-        x=tsne[:, 0],
-        y=tsne[:, 1],
+        x=map[:, 0],
+        y=map[:, 1],
         mode='markers',
         marker=dict(
             size=5,
@@ -231,7 +232,7 @@ if __name__ == "__main__":
     random.seed(0)
     np.random.seed(0)
 
-    df_path = "/home/yotam/Projects/LootedArt/pix2pix/samples/embedding.csv"
+    df_path = "../ResNetSim/results/embedding.csv"
 
     print("########## Starting embedding space visualization server ##########")
     # read df
@@ -244,12 +245,16 @@ if __name__ == "__main__":
 
     print("Computing t-sne mapping...")
     # t-SNE Outputs a 3 dimensional point for each image
-    tsne = TSNE(
+    map = TSNE(
         random_state=0,
         n_components=2,
         verbose=0,
-        perplexity=70,
+        perplexity=10,
         n_iter=5000).fit_transform(embedded_rep)
+
+    # map = PCA(
+    #     n_components=2, random_state=22
+    # ).fit_transform(embedded_rep)
 
     #
     app.layout = html.Div(

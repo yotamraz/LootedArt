@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torchvision.transforms
 from torch import optim
 from torch.utils.data import DataLoader
-from torchmetrics import MeanSquaredError
+from torchmetrics import MeanSquaredError, StructuralSimilarityIndexMeasure
 from tqdm import tqdm
 
 from config import Config
@@ -43,6 +43,7 @@ class Trainer:
         self.perceptual_loss = VGGLoss()
         self.tv_loss = TVLoss(p=2)
         self.mse = MeanSquaredError().to(self.opt.device)
+        self.ssim = StructuralSimilarityIndexMeasure().to(self.opt.device)
 
         self.train_dataset = ArtDataset(dir_path=os.path.join(self.opt.data_path, "train"), augment=True,
                                         img_size=self.opt.img_size)
@@ -51,7 +52,7 @@ class Trainer:
 
         self.val_dataset = ArtDataset(dir_path=os.path.join(self.opt.data_path, "test"), augment=False,
                                       img_size=self.opt.img_size)
-        self.val_loader = DataLoader(self.val_dataset, batch_size=1, shuffle=True,
+        self.val_loader = DataLoader(self.val_dataset, batch_size=self.opt.batch_size, shuffle=True,
                                      num_workers=self.config.num_workers)
 
         self.transform = torchvision.transforms.Compose([
@@ -84,18 +85,20 @@ class Trainer:
     def train_step(self, epoch):
         loop = tqdm(self.train_loader, leave=True)
         self.discriminator.train(), self.generator.train()
-        for idx, (inputs, targets) in enumerate(loop):
-            inputs, targets = inputs.to(self.opt.device), targets.to(self.opt.device)
+        for idx, (inputs, targets, positives, negatives) in enumerate(loop):
+            inputs, targets, positives, negatives = inputs.to(self.opt.device), targets.to(
+                self.opt.device), positives.to(self.opt.device), negatives.to(self.opt.device)
             self.generator.zero_grad()
             self.discriminator.zero_grad()
             # train discriminator
-            with torch.cuda.amp.autocast():
-                latent, target_fake = self.generator(inputs)
-                d_real = self.discriminator(inputs, targets)
-                d_fake = self.discriminator(inputs, target_fake.detach())
-                d_real_loss = self.bce_loss(d_real, torch.ones_like(d_real))
-                d_fake_loss = self.bce_loss(d_fake, torch.zeros_like(d_fake))
-                d_loss = (d_real_loss + d_fake_loss) / 2
+            latent_positives, _ = self.generator(positives)
+            latent_negatives, _ = self.generator(negatives)
+            latent_inputs, target_fake = self.generator(inputs)
+            d_real = self.discriminator(inputs, targets)
+            d_fake = self.discriminator(inputs, target_fake.detach())
+            d_real_loss = self.bce_loss(d_real, torch.ones_like(d_real))
+            d_fake_loss = self.bce_loss(d_fake, torch.zeros_like(d_fake))
+            d_loss = (d_real_loss + d_fake_loss) / 2
             # backprop
             self.opt_disc.zero_grad()
             self.d_scaler.scale(d_loss).backward()
@@ -103,42 +106,41 @@ class Trainer:
             self.d_scaler.update()
 
             # train generator
-            with torch.cuda.amp.autocast():
-                self.discriminator.zero_grad()
-                d_fake = self.discriminator(inputs, target_fake)
-                g_fake_loss = self.bce_loss(d_fake, torch.ones_like(d_fake))
-                l1_loss = self.l1_loss(target_fake, targets) * self.config.l1_lambda
-                triplet_loss = self.triplet_loss(targets, self._apply_transformations(targets),
-                                                 self._shuffle_tensor(targets)) * self.config.triplet_lambda
-                pr_loss = self.perceptual_loss(target_fake, targets)
-                tv_loss = self.tv_loss(target_fake, targets)
-                g_loss = g_fake_loss + l1_loss + triplet_loss + pr_loss + tv_loss
-                mse = self.mse(target_fake, targets)
+            self.discriminator.zero_grad()
+            d_fake = self.discriminator(inputs, target_fake)
+            g_fake_loss = self.bce_loss(d_fake, torch.ones_like(d_fake))
+            l1_loss = self.l1_loss(target_fake, targets) * self.config.l1_lambda
+            triplet_loss = self.triplet_loss(latent_inputs, latent_positives,
+                                             latent_negatives) * self.config.triplet_lambda
+            g_loss = g_fake_loss + l1_loss + triplet_loss
+            ssim = self.ssim(target_fake, targets)
             # backprop
             self.opt_gen.zero_grad()
             self.g_scaler.scale(g_loss).backward()
             self.g_scaler.step(self.opt_gen)
             self.g_scaler.update()
 
-            if idx % 50 == 0:
+            if idx % 5 == 0:
                 loop.set_postfix(
-                    epoch=f"{epoch+1}/{self.config.num_epochs}",
+                    epoch=f"{epoch + 1}/{self.config.num_epochs}",
                     subset="train",
                     g_loss=g_loss.mean().item(),
                     d_loss=d_loss.mean().item(),
-                    accuracy_mse=mse.mean().item(),
-                    accuracy_psnr=10*torch.log10((self.opt.img_size ** 2) / mse).mean().item()
+                    accuracy_ssim=ssim.mean().item()
                 )
 
     def val_step(self, epoch):
         loop = tqdm(self.val_loader, leave=True)
         self.discriminator.eval(), self.generator.eval()
-        for idx, (inputs, targets) in enumerate(loop):
-            inputs, targets = inputs.to(self.opt.device), targets.to(self.opt.device)
+        for idx, (inputs, targets, positives, negatives) in enumerate(loop):
+            inputs, targets, positives, negatives = inputs.to(self.opt.device), targets.to(
+                self.opt.device), positives.to(self.opt.device), negatives.to(self.opt.device)
             with torch.no_grad():
 
                 # eval discriminator
-                _, target_fake = self.generator(inputs)
+                latent_inputs, target_fake = self.generator(inputs)
+                latent_positives, _ = self.generator(positives)
+                latent_negatives, _ = self.generator(negatives)
                 d_real = self.discriminator(inputs, targets)
                 d_fake = self.discriminator(inputs, target_fake.detach())
                 d_real_loss = self.bce_loss(d_real, torch.ones_like(d_real))
@@ -149,26 +151,25 @@ class Trainer:
                 d_fake = self.discriminator(inputs, target_fake)
                 g_fake_loss = self.bce_loss(d_fake, torch.ones_like(d_fake))
                 l1_loss = self.l1_loss(target_fake, targets) * self.config.l1_lambda
-                triplet_loss = self.triplet_loss(targets, self._apply_transformations(targets),
-                                                 self._shuffle_tensor(targets)) * self.config.triplet_lambda
-                pr_loss = self.perceptual_loss(target_fake, targets)
-                tv_loss = self.tv_loss(target_fake, targets)
-                g_loss = g_fake_loss + l1_loss + triplet_loss + pr_loss + tv_loss
-                mse = self.mse(target_fake, targets)
+                triplet_loss = self.triplet_loss(latent_inputs, latent_positives,
+                                                 latent_negatives) * self.config.triplet_lambda
+                g_loss = g_fake_loss + l1_loss + triplet_loss
+                ssim = self.ssim(target_fake, targets)
 
-                if idx % 50 == 0:
+                if idx % 5 == 0:
                     loop.set_postfix(
                         epoch=f"{epoch + 1}/{self.config.num_epochs}",
                         subset="val",
                         g_loss=g_loss.mean().item(),
                         d_loss=d_loss.mean().item(),
-                        accuracy_mse=mse.mean().item(),
-                        accuracy_psnr=10*torch.log10((self.opt.img_size ** 2) / mse).mean().item()
+                        accuracy_ssim=ssim.mean().item()
                     )
+
+
 def train():
     parser = ArgumentParser()
     parser.add_argument("--data_path", type=str, default="./sample_data", help="path to dataset")
-    parser.add_argument("--batch_size", type=int, default=32, help="mini batch size for training")
+    parser.add_argument("--batch_size", type=int, default=16, help="mini batch size for training")
     parser.add_argument("--img_size", type=int, default=256, help="size of input and target images")
     parser.add_argument("--device", type=str, default="cuda:0", help="cuda:0/1/2/etc for GPU -1 for CPU")
     opt = parser.parse_args()

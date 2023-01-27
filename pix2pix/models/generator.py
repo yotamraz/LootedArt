@@ -52,6 +52,15 @@ class Generator(nn.Module):
         self.bottleneck = nn.Sequential(
             nn.Conv2d(features * 8, features * 8, 4, 2, 1), nn.ReLU()
         )
+        self.embedding = nn.Sequential(
+            nn.Linear(features*8, features),
+            nn.ReLU()
+        )
+        self.un_bottleneck = nn.Sequential(
+            nn.Linear(features, features*8),
+            nn.ReLU()
+        )
+
 
         self.up1 = Block(features * 8, features * 8, down=False, act="relu", use_dropout=True)
         self.up2 = Block(
@@ -84,14 +93,17 @@ class Generator(nn.Module):
         d6 = self.down5(d5)
         d7 = self.down6(d6)
         bottleneck = self.bottleneck(d7)
-        up1 = self.up1(bottleneck)
+        embedding = self.embedding(bottleneck.view(-1, 512*1*1))
+        un_bottleneck = self.un_bottleneck(embedding)
+        un_bottleneck = un_bottleneck.view(-1, 512, 1, 1)
+        up1 = self.up1(un_bottleneck)
         up2 = self.up2(torch.cat([up1, d7], 1))
         up3 = self.up3(torch.cat([up2, d6], 1))
         up4 = self.up4(torch.cat([up3, d5], 1))
         up5 = self.up5(torch.cat([up4, d4], 1))
         up6 = self.up6(torch.cat([up5, d3], 1))
         up7 = self.up7(torch.cat([up6, d2], 1))
-        return bottleneck.view(-1, 512), self.final_up(torch.cat([up7, d1], 1))
+        return embedding, self.final_up(torch.cat([up7, d1], 1))
 
 
 def test():

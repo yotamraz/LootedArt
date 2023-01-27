@@ -41,7 +41,7 @@ class Inference:
         self.generator.eval()
         if self.save_data:
             df = pd.DataFrame(columns=["image_path", "embedding"])
-        for idx, (inputs, targets) in enumerate(loop):
+        for idx, (inputs, targets, _, _) in enumerate(loop):
             inputs, targets = inputs.to(self.config.device), targets.to(self.config.device)
             with torch.no_grad():
                 embedding, y_fake = self.generator(inputs)
@@ -65,7 +65,7 @@ def infer():
     parser.add_argument("--examples", type=int, default=10)
     parser.add_argument("--img_size", type=int, default=256)
     parser.add_argument("--save_path", type=str, default="./samples")
-    parser.add_argument("--checkpoint", type=str, default="./checkpoints/generator_400.pth")
+    parser.add_argument("--checkpoint", type=str, default="./checkpoints/generator_150.pth")
     parser.add_argument("--save_data", action="store_true")
     opt = parser.parse_args()
     inferer = Inference(opt)
