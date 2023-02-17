@@ -15,7 +15,8 @@ class FlowersDataset(Dataset):
         super(FlowersDataset, self).__init__()
         self.root_dir = dir_path
         self.path_to_images = self.root_dir
-        self.list_files = [n for n in os.listdir(self.path_to_images) if n.endswith('.png') or n.endswith('.jpg')]
+        self.list_files = [n for n in os.listdir(self.path_to_images) if (n.endswith('.png') or n.endswith('.jpg'))]
+        self._filter_empty_images()
         self.img_size = img_size
         self.augment = augment
         self.input_augment_advance = A.Compose(
@@ -35,6 +36,13 @@ class FlowersDataset(Dataset):
                 ToTensorV2(),
             ]
         )
+
+
+    def _filter_empty_images(self):
+        for file in self.list_files:
+            path_to_file = os.path.join(self.path_to_images, file)
+            if os.path.getsize(path_to_file) == 0:
+                self.list_files.remove(file)
 
     def __len__(self):
         return len(self.list_files)
