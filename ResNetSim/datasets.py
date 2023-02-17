@@ -15,7 +15,7 @@ class FlowersDataset(Dataset):
         super(FlowersDataset, self).__init__()
         self.root_dir = dir_path
         self.path_to_images = self.root_dir
-        self.list_files = [n for n in os.listdir(self.path_to_images) if n.endswith('.png')]
+        self.list_files = [n for n in os.listdir(self.path_to_images) if n.endswith('.png') or n.endswith('.jpg')]
         self.img_size = img_size
         self.augment = augment
         self.input_augment_advance = A.Compose(

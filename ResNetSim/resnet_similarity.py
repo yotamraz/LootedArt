@@ -30,6 +30,7 @@ def action(opt):
         path_to_image = os.path.join(dataset.path_to_images, dataset.list_files[idx])
         df.loc[len(df.index)] = [path_to_image, embedding.detach().cpu().numpy().tolist()]
 
+    os.makedirs("./results", exist_ok=True)
     df.to_csv(os.path.join("./results", "embedding.csv"))
 
 
