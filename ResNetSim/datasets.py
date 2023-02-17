@@ -10,9 +10,9 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets import ImageNet
 
-class FlowersDataset(Dataset):
+class ImageDataset(Dataset):
     def __init__(self, dir_path: str, augment: bool = True, img_size: int = 256):
-        super(FlowersDataset, self).__init__()
+        super(ImageDataset, self).__init__()
         self.root_dir = dir_path
         self.path_to_images = self.root_dir
         self.list_files = [n for n in os.listdir(self.path_to_images) if (n.endswith('.png') or n.endswith('.jpg'))]
